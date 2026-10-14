@@ -7,3 +7,4 @@ tiktoken            # optional: token counting (falls back to a word-based estim
 fastapi>=0.100      # REST API framework
 uvicorn>=0.23       # ASGI server
 python-dotenv>=1.0  # loads GEMINI_API_KEY from .env
+httpx>=0.24         # FastAPI TestClient

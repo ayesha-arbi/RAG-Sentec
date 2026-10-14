@@ -6,7 +6,8 @@
   "scripts": {
     "build": "tsc",
     "watch": "tsc --watch",
-    "start": "tsc && npx --yes serve ."
+    "start": "tsc && npx --yes serve .",
+    "test": "tsc && node --test test/api.test.mjs test/state.test.mjs"
   },
   "devDependencies": {
     "typescript": "^5.6.0"

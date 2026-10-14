@@ -5,75 +5,39 @@ import { TabFilter, GlassTheme } from './types.js';
 document.addEventListener('DOMContentLoaded', () => {
   const ui = new UIManager();
 
-  // Subscribe UI to state updates
   store.subscribe(state => {
     ui.render(state);
   });
 
-  // Handle composer form submission
+  void store.checkHealth();
+
   const composerForm = document.getElementById('composer') as HTMLFormElement | null;
   const inputEl = document.getElementById('input') as HTMLInputElement | null;
   const messagesEl = document.getElementById('messages') as HTMLElement | null;
 
   if (composerForm && inputEl) {
-    composerForm.addEventListener('submit', (e) => {
+    composerForm.addEventListener('submit', async (e) => {
       e.preventDefault();
+      if (store.composerLocked()) return;
       const text = inputEl.value.trim();
       if (!text) return;
 
-      // Add user message
-      store.addMessage('user', text, 'You');
       inputEl.value = '';
-
-      // Scroll messages down
+      await store.sendMessage(text);
+      inputEl.focus();
       if (messagesEl) {
         messagesEl.scrollTop = messagesEl.scrollHeight;
       }
-
-      // Show typing indicator
-      const typingEl = document.createElement('div');
-      typingEl.className = 'msg assistant-msg typing-msg';
-      typingEl.innerHTML = `
-        <div class="label">Answer</div>
-        <div class="typing-indicator">
-          <span></span><span></span><span></span>
-        </div>
-      `;
-      messagesEl?.appendChild(typingEl);
-      if (messagesEl) {
-        messagesEl.scrollTop = messagesEl.scrollHeight;
-      }
-
-      // Simulate thoughtful AI reply
-      setTimeout(() => {
-        typingEl.remove();
-
-        const cannedReplies = [
-          {
-            reply: 'Memory serves not just as an archive of the past, but as a generative substrate for future anticipation. In distributed cognitive architectures, synthetic memory structures can offload indexing while preserving subjective semantic coherence.',
-            highlight: 'synthetic memory structures can offload indexing while preserving subjective semantic coherence'
-          },
-          {
-            reply: 'Cognitive augmentation suggests that intelligence is relational. By establishing continuous bidirectional feedback loops with ambient neural notebooks, the perimeter of the human mind expands beyond biological bounds.',
-            highlight: 'the perimeter of the human mind expands beyond biological bounds'
-          },
-          {
-            reply: 'Neuroscience indicates that biological memory is reconstructive rather than photographic. When AI participates in this reconstruction, it transforms recollection from a static playback into an active co-creation.',
-            highlight: 'transforms recollection from a static playback into an active co-creation'
-          }
-        ];
-
-        const selectedReply = cannedReplies[Math.floor(Math.random() * cannedReplies.length)];
-        store.addMessage('assistant', selectedReply.reply, 'Answer', selectedReply.highlight);
-
-        if (messagesEl) {
-          messagesEl.scrollTop = messagesEl.scrollHeight;
-        }
-      }, 850);
     });
   }
 
-  // Handle Tabs click
+  document.getElementById('chatStatus')?.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement;
+    if (target.id === 'retryHealthBtn') {
+      void store.checkHealth();
+    }
+  });
+
   const tabsContainer = document.getElementById('tabs');
   if (tabsContainer) {
     tabsContainer.addEventListener('click', (e) => {
@@ -84,7 +48,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Handle Group Button
   const groupBtn = document.querySelector('.group-btn');
   if (groupBtn) {
     groupBtn.addEventListener('click', () => {
@@ -92,7 +55,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Handle Actions Button
   const actionsBtn = document.querySelector('.actions-btn');
   if (actionsBtn) {
     actionsBtn.addEventListener('click', () => {
@@ -100,7 +62,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Actions Modal buttons
   document.getElementById('modalAddNote')?.addEventListener('click', () => {
     document.getElementById('actionModal')?.classList.add('hidden');
     const noteText = prompt('Enter note text:');
@@ -125,16 +86,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  document.getElementById('modalSummarize')?.addEventListener('click', () => {
-    document.getElementById('actionModal')?.classList.add('hidden');
-    store.addNote({
-      type: 'text',
-      content: 'AI serves as externalized memory: flips cognition from static storage to real-time semantic navigation.',
-      highlighted: true
-    });
-  });
-
-  // Theme pills in Actions modal
   document.querySelectorAll<HTMLButtonElement>('.theme-pill').forEach(pill => {
     pill.addEventListener('click', () => {
       document.querySelectorAll('.theme-pill').forEach(p => p.classList.remove('active'));
@@ -146,7 +97,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Notes Grid card interactions (Open detail / links / media)
   const notesGrid = document.getElementById('notesGrid');
   if (notesGrid) {
     notesGrid.addEventListener('click', (e) => {
@@ -158,7 +108,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const note = store.getState().notes.find(n => n.id === noteId);
       if (!note) return;
 
-      // If clicked Open button or dots or card itself (and not inside an <a> tag)
       if (target.closest('.open') || target.closest('.dots') || target.classList.contains('card') || target.closest('.card')) {
         if (!target.closest('a')) {
           ui.showNoteDetail(note);
@@ -167,21 +116,18 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Right Rail buttons
   document.getElementById('newChatBtn')?.addEventListener('click', () => {
     if (confirm('Start a new chat session?')) {
-      store.resetChat();
+      void store.resetChat();
     }
   });
 
   const railItems = document.querySelectorAll<HTMLButtonElement>('.right-rail .rail-item');
   if (railItems.length >= 4) {
-    // All chats
     railItems[1].addEventListener('click', () => {
       ui.showChatsDrawer();
     });
 
-    // Search
     railItems[2].addEventListener('click', () => {
       const query = prompt('Search notes & messages:');
       if (query !== null) {
@@ -189,27 +135,17 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-    // Images
     railItems[3].addEventListener('click', () => {
       store.setFilter('media');
     });
   }
 
-  // Chats drawer items click
-  document.querySelectorAll<HTMLElement>('.chats-list .chat-item').forEach(item => {
-    item.addEventListener('click', () => {
-      const chatTitle = item.dataset.chat;
-      if (chatTitle) {
-        store.resetChat(chatTitle);
-        document.getElementById('chatsDrawer')?.classList.add('hidden');
-      }
-    });
+  document.getElementById('chatsDrawer')?.addEventListener('click', () => {
+    document.getElementById('chatsDrawer')?.classList.add('hidden');
   });
 
-  // Panel Resizer Slider between Chat and Notes
   initPanelResizer();
 
-  // Model pill toggle (Prospecto Engine)
   const modelBtn = document.getElementById('modelBtn');
   if (modelBtn) {
     modelBtn.addEventListener('click', () => {
@@ -233,12 +169,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Share button
   document.getElementById('shareBtn')?.addEventListener('click', () => {
     if (navigator.share) {
       navigator.share({
         title: store.getState().chatTitle,
-        text: 'Prospecto - The Science and Philosophy of Consciousness workspace.'
+        text: 'Prospecto — university prospectus RAG workspace.'
       }).catch(() => {});
     } else {
       navigator.clipboard.writeText(window.location.href);
@@ -247,15 +182,11 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-/**
- * Initializes the draggable resizer slider between Chat and Notes panels
- */
 function initPanelResizer(): void {
   const resizer = document.getElementById('panelResizer');
   const shell = document.querySelector('.shell') as HTMLElement | null;
   if (!resizer || !shell) return;
 
-  // Restore saved width from localStorage if exists
   const savedWidth = localStorage.getItem('prospecto_chat_width');
   if (savedWidth) {
     const parsed = parseInt(savedWidth, 10);
@@ -311,13 +242,11 @@ function initPanelResizer(): void {
   resizer.addEventListener('pointerup', onPointerUp);
   resizer.addEventListener('pointercancel', onPointerUp);
 
-  // Double-click to reset to default 360px
   resizer.addEventListener('dblclick', () => {
     shell.style.setProperty('--chat-width', '360px');
     localStorage.removeItem('prospecto_chat_width');
   });
 
-  // Keyboard accessibility (ArrowLeft shrinks chat, ArrowRight expands chat)
   resizer.addEventListener('keydown', (e: KeyboardEvent) => {
     const chatPanel = document.querySelector('.chat-panel') as HTMLElement | null;
     const curWidth = chatPanel ? chatPanel.getBoundingClientRect().width : 360;

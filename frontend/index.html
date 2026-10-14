@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Prospecto</title>
+  <meta name="api-base" content="http://localhost:8000" />
   <link rel="icon" type="image/svg+xml" href="assets/logo.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -42,10 +43,12 @@
         <button class="link-btn" id="shareBtn" title="Share discussion">Share</button>
       </header>
 
-      <h1 class="chat-title" id="chatTitle">The Science and Philosophy of Consciousness</h1>
+      <h1 class="chat-title" id="chatTitle">Prospecto</h1>
 
       <!-- Dynamic Messages rendered via TypeScript -->
       <div class="messages" id="messages"></div>
+
+      <div id="chatStatus" class="chat-status hidden" role="status" aria-live="polite"></div>
 
       <!-- Message Composer -->
       <form class="composer" id="composer">

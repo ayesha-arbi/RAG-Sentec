@@ -1,4 +1,4 @@
-import { AppState, ChatMessage, Note, TabFilter } from './types.js';
+import { AppState, ChatMessage, Note, TabFilter, ChatThread } from './types.js';
 import { store } from './state.js';
 
 function escapeHtml(str: string): string {
@@ -8,6 +8,10 @@ function escapeHtml(str: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+function pageLabel(start: number, end: number): string {
+  return start === end ? `p. ${start}` : `pp. ${start}–${end}`;
 }
 
 export class UIManager {
@@ -69,13 +73,6 @@ export class UIManager {
                 <small>Bookmark a link or article</small>
               </div>
             </button>
-            <button class="modal-action-row" id="modalSummarize">
-              <span class="action-icon">✨</span>
-              <div class="action-text">
-                <strong>Summarize Key Insight</strong>
-                <small>Extract essence into an instant note card</small>
-              </div>
-            </button>
             <div class="modal-divider"></div>
             <div class="theme-picker-section">
               <label>Glass Surface Aesthetic:</label>
@@ -134,20 +131,7 @@ export class UIManager {
             <h3>All Chats</h3>
             <button class="close-modal-btn" data-close="chatsDrawer">&times;</button>
           </div>
-          <div class="chats-list">
-            <div class="chat-item active" data-chat="The Science and Philosophy of Consciousness">
-              <div class="chat-item-title">The Science and Philosophy of Consciousness</div>
-              <div class="chat-item-meta">Active • 3 messages • Prospecto 6.0</div>
-            </div>
-            <div class="chat-item" data-chat="Neural Architectures & Cognitive Retrievability">
-              <div class="chat-item-title">Neural Architectures & Cognitive Retrievability</div>
-              <div class="chat-item-meta">Yesterday • 14 notes saved</div>
-            </div>
-            <div class="chat-item" data-chat="Epistemology of Synthetic Memory">
-              <div class="chat-item-title">Epistemology of Synthetic Memory</div>
-              <div class="chat-item-meta">3 days ago • 8 notes saved</div>
-            </div>
-          </div>
+          <div class="chats-list" id="chatsList"></div>
         </div>
       `;
       document.body.appendChild(drawer);
@@ -198,61 +182,164 @@ export class UIManager {
   }
 
   public render(state: AppState): void {
-    // 1. Update theme attribute
     document.body.dataset.theme = state.activeTheme;
 
-    // 2. Update Chat Title
     if (this.chatTitleEl && this.chatTitleEl.textContent !== state.chatTitle) {
       this.chatTitleEl.textContent = state.chatTitle;
     }
 
-    // 3. Render Messages
-    this.renderMessages(state.messages);
-
-    // 4. Render Tabs
+    this.renderMessages(state);
     this.renderTabs(state.activeFilter);
-
-    // 5. Render Notes
     this.renderNotes(state.notes, state.activeFilter, state.isGrouped, state.searchQuery);
+    this.renderChats(state.chats, state.sessionId);
+    this.renderComposer(state);
 
-    // 6. Update Group Button State
     if (this.groupBtn) {
       this.groupBtn.classList.toggle('active-pill', state.isGrouped);
     }
   }
 
-  private renderMessages(messages: ChatMessage[]): void {
+  private renderComposer(state: AppState): void {
+    const form = document.getElementById('composer') as HTMLFormElement | null;
+    const input = document.getElementById('input') as HTMLInputElement | null;
+    const submit = form?.querySelector('button[type="submit"]') as HTMLButtonElement | null;
+    const statusEl = document.getElementById('chatStatus');
+    const locked =
+      state.backendStatus !== 'ready' ||
+      state.requestStatus === 'checking' ||
+      state.requestStatus === 'loading';
+
+    if (form) {
+      form.classList.toggle('is-disabled', locked);
+      form.setAttribute('aria-busy', locked ? 'true' : 'false');
+    }
+    if (input) {
+      input.disabled = locked;
+      if (state.requestStatus === 'checking') {
+        input.placeholder = 'Checking backend…';
+      } else if (state.requestStatus === 'loading') {
+        input.placeholder = 'Retrieving from the prospectus…';
+      } else if (state.backendStatus === 'index_not_ready') {
+        input.placeholder = 'Index not ready';
+      } else if (state.backendStatus === 'unavailable') {
+        input.placeholder = 'Backend unavailable';
+      } else {
+        input.placeholder = 'Ask anything';
+      }
+    }
+    if (submit) {
+      submit.disabled = locked;
+    }
+
+    if (!statusEl) return;
+
+    const showRetry = state.backendStatus !== 'ready';
+    let statusText = '';
+    if (state.requestStatus === 'checking') {
+      statusText = 'Checking Prospecto backend…';
+    } else if (state.requestStatus === 'loading') {
+      statusText = 'Retrieving an answer from the prospectus…';
+    } else if (state.error) {
+      statusText = state.error;
+    }
+
+    if (!statusText) {
+      statusEl.innerHTML = '';
+      statusEl.classList.add('hidden');
+      return;
+    }
+
+    statusEl.classList.remove('hidden');
+    statusEl.classList.toggle('is-error', Boolean(state.error) && state.requestStatus === 'idle');
+    const retry = showRetry && state.requestStatus === 'idle'
+      ? `<button type="button" class="status-retry" id="retryHealthBtn">Retry</button>`
+      : '';
+    statusEl.innerHTML = `<span>${escapeHtml(statusText)}</span>${retry}`;
+  }
+
+  private renderChats(chats: ChatThread[], sessionId: string | null): void {
+    const listEl = document.getElementById('chatsList');
+    if (!listEl) return;
+    if (!chats || chats.length === 0) {
+      listEl.innerHTML = '<div class="empty-notes"><small>No conversations yet. Ask a question to start.</small></div>';
+      return;
+    }
+    listEl.innerHTML = chats.map(c => `
+      <div class="chat-item ${c.id === sessionId ? 'active' : ''}" data-session-id="${escapeHtml(c.id)}">
+        <div class="chat-item-title">${escapeHtml(c.title)}</div>
+        <div class="chat-item-meta">${escapeHtml(c.meta)}</div>
+      </div>
+    `).join('');
+  }
+
+  private renderMessages(state: AppState): void {
     if (!this.messagesContainer) return;
 
-    this.messagesContainer.innerHTML = messages.map(msg => {
-      if (msg.role === 'context') {
-        return `
-          <div class="msg context-msg">
-            <div class="text faded-text">${escapeHtml(msg.text)}</div>
+    const parts = state.messages.map(msg => this.messageHtml(msg));
+
+    if (state.requestStatus === 'loading') {
+      parts.push(`
+        <div class="msg assistant-msg typing-msg" aria-live="polite">
+          <div class="label">Answer</div>
+          <div class="typing-indicator">
+            <span></span><span></span><span></span>
           </div>
-        `;
-      }
+        </div>
+      `);
+    }
 
-      let renderedText = escapeHtml(msg.text);
+    this.messagesContainer.innerHTML = parts.join('');
+    this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+  }
 
-      if (msg.highlightedText) {
-        const escapedHighlight = escapeHtml(msg.highlightedText);
-        renderedText = renderedText.replace(
-          escapedHighlight,
-          `<mark class="highlight-bubble" data-highlight="${encodeURIComponent(msg.highlightedText)}" title="Saved highlight">${escapedHighlight}</mark>`
-        );
-      }
-
-      const roleClass = msg.role === 'user' ? 'user-msg' : 'assistant-msg';
-      const labelHtml = msg.label ? `<div class="label">${escapeHtml(msg.label)}</div>` : '';
-
+  private messageHtml(msg: ChatMessage): string {
+    if (msg.role === 'context') {
       return `
-        <div class="msg ${roleClass}" data-id="${msg.id}">
-          ${labelHtml}
-          <div class="text">${renderedText}</div>
+        <div class="msg context-msg">
+          <div class="text faded-text">${escapeHtml(msg.text)}</div>
         </div>
       `;
-    }).join('');
+    }
+
+    let renderedText = escapeHtml(msg.text);
+
+    if (msg.highlightedText) {
+      const escapedHighlight = escapeHtml(msg.highlightedText);
+      renderedText = renderedText.replace(
+        escapedHighlight,
+        `<mark class="highlight-bubble" data-highlight="${encodeURIComponent(msg.highlightedText)}" title="Saved highlight">${escapedHighlight}</mark>`
+      );
+    }
+
+    const roleClass = msg.role === 'user' ? 'user-msg' : 'assistant-msg';
+    const labelHtml = msg.label ? `<div class="label">${escapeHtml(msg.label)}</div>` : '';
+    const sourcesHtml = this.sourcesHtml(msg);
+
+    return `
+      <div class="msg ${roleClass}" data-id="${msg.id}">
+        ${labelHtml}
+        <div class="text">${renderedText}</div>
+        ${sourcesHtml}
+      </div>
+    `;
+  }
+
+  private sourcesHtml(msg: ChatMessage): string {
+    if (msg.role !== 'assistant' || !msg.sources || msg.sources.length === 0) {
+      return '';
+    }
+    const items = msg.sources.map(src => `
+      <li class="source-item">
+        <div class="source-meta">${escapeHtml(src.section)} · ${escapeHtml(pageLabel(src.page_start, src.page_end))} · score ${escapeHtml(String(src.score))}</div>
+        <p class="source-excerpt">${escapeHtml(src.text)}</p>
+      </li>
+    `).join('');
+    return `
+      <details class="msg-sources">
+        <summary>Sources (${msg.sources.length})</summary>
+        <ul>${items}</ul>
+      </details>
+    `;
   }
 
   private renderTabs(activeFilter: TabFilter): void {
@@ -272,7 +359,6 @@ export class UIManager {
   private renderNotes(notes: Note[], filter: TabFilter, isGrouped: boolean, searchQuery: string): void {
     if (!this.notesGrid) return;
 
-    // Filter by tab
     let filtered = notes.filter(note => {
       if (filter === 'highlight') {
         return note.highlighted || note.type === 'text';
@@ -286,7 +372,6 @@ export class UIManager {
       return true;
     });
 
-    // Filter by search query if any
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       filtered = filtered.filter(n =>
@@ -301,7 +386,7 @@ export class UIManager {
     if (filtered.length === 0) {
       this.notesGrid.innerHTML = `
         <div class="empty-notes">
-          <p>No notes found in "${filter}"</p>
+          <p>No notes yet</p>
           <small>Highlight text from the conversation or click Actions to add one.</small>
         </div>
       `;
@@ -342,7 +427,7 @@ export class UIManager {
           return `
             <article class="note media-note" data-id="${note.id}">
               <span class="dots" title="Note options">•••</span>
-              <img src="${note.imageUrl}" alt="${escapeHtml(note.title || 'Note media')}" onerror="this.onerror=null;this.src='https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=700&q=80';" />
+              <img src="${note.imageUrl}" alt="${escapeHtml(note.title || 'Note media')}" />
               <div class="media-icon" title="Media asset">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                   <rect x="3" y="3" width="18" height="18" rx="3" ry="3"/>
@@ -361,7 +446,7 @@ export class UIManager {
 
   public showNoteDetail(note: Note): void {
     const modal = document.getElementById('noteDetailModal');
-    const titleEl = document.getElementById('detailNoteNoteTitle') || document.getElementById('detailNoteTitle');
+    const titleEl = document.getElementById('detailNoteTitle');
     const bodyEl = document.getElementById('detailNoteBody');
     const copyBtn = document.getElementById('copyNoteBtn');
     const deleteBtn = document.getElementById('deleteNoteBtn');
