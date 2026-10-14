@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#475569" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </linearGradient>
+    <linearGradient id="skin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f8d3bb" />
+      <stop offset="100%" stop-color="#e0b194" />
+    </linearGradient>
+  </defs>
+  <rect width="100" height="100" rx="50" fill="url(#bg)" />
+  <!-- Hair back -->
+  <circle cx="50" cy="40" r="26" fill="#1c1917" />
+  <!-- Face -->
+  <ellipse cx="50" cy="44" rx="16" ry="19" fill="url(#skin)" />
+  <!-- Hair top -->
+  <path d="M 32,38 C 32,22 68,22 68,38 C 65,30 45,28 32,38 Z" fill="#1c1917" />
+  <!-- Shoulders -->
+  <path d="M 22,96 C 24,70 40,65 50,65 C 60,65 76,70 78,96 Z" fill="#334155" />
+</svg>
